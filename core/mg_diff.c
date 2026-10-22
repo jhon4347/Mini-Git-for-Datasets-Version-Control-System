@@ -155,3 +155,40 @@ mg_status mg_diff_lines(const mg_strvec *old_rows, const mg_strvec *new_rows, mg
     return MG_OK;
 }
 
+/* --------------------------------------------------------- patch apply */
+
+mg_status mg_apply_patch(const mg_strvec *base, const mg_patch *patch, mg_strvec *out) {
+    if (!base || !patch || !out) return MG_ERR_INVALID;
+
+    mg_strvec result;
+    mg_strvec_init(&result);
+    size_t b = 0;                                      /* moving index into base */
+    mg_status st = MG_OK;
+
+    for (size_t k = 0; k < patch->size && st == MG_OK; ++k) {
+        const mg_diffrow *e = &patch->rows[k];
+        switch (e->type) {
+            case MG_EDIT_KEEP:
+                if (b >= base->size) { st = MG_ERR_BAD_PATCH; break; }
+                st = mg_strvec_push(&result, base->items[b++]);
+                break;
+            case MG_EDIT_INSERT:
+                if (!e->content) { st = MG_ERR_BAD_PATCH; break; }
+                st = mg_strvec_push(&result, e->content);
+                break;
+            case MG_EDIT_DELETE:
+                if (b >= base->size) { st = MG_ERR_BAD_PATCH; break; }
+                if (e->content && strcmp(e->content, base->items[b]) != 0) { st = MG_ERR_BAD_PATCH; break; }
+                b++;                                   /* skip this base row */
+                break;
+            default:
+                st = MG_ERR_BAD_PATCH;
+        }
+    }
+    if (st == MG_OK && b != base->size) st = MG_ERR_BAD_PATCH;   /* base not fully consumed */
+
+    if (st != MG_OK) { mg_strvec_free(&result); return st; }
+    mg_strvec_free(out);
+    *out = result;
+    return MG_OK;
+}
