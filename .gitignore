@@ -1,0 +1,5 @@
+build/
+minigit
+minigit.exe
+*.o
+tmp_*.csv
