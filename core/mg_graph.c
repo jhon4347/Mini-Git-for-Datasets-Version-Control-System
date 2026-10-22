@@ -76,3 +76,48 @@ mg_status mg_graph_add_commit(mg_graph *g, const char *id,
     return st;
 }
 
+mg_status mg_graph_rebuild(const mg_graph *g, const char *id, mg_strvec *out) {
+    if (!g || !id || !out) return MG_ERR_INVALID;
+    const mg_commit *cur = mg_graph_get(g, id);
+    if (!cur) return MG_ERR_NOT_FOUND;
+
+    /* 1) Traverse from the commit back to the root (first parent each time). */
+    const mg_commit **chain = NULL;
+    size_t len = 0, cap = 0;
+    mg_status st = MG_OK;
+    const size_t graph_size = mg_graph_count(g);
+
+    while (cur && st == MG_OK) {
+        if (len >= graph_size) { st = MG_ERR_INVALID; break; }   /* longer than the graph => cycle */
+        if (len == cap) {
+            size_t newcap = cap ? cap * 2 : 8;
+            const mg_commit **p = (const mg_commit **)mg_realloc((void *)chain, newcap * sizeof *chain);
+            if (!p) { st = MG_ERR_NOMEM; break; }
+            chain = p;
+            cap = newcap;
+        }
+        chain[len++] = cur;
+        if (cur->parent_count == 0) break;                       /* reached the root */
+        cur = mg_graph_get(g, cur->parent_ids[0]);
+        if (!cur) st = MG_ERR_NOT_FOUND;                         /* dangling parent link */
+    }
+
+    /* 2) Replay the patches from the root up to the requested commit. */
+    mg_strvec rows;
+    mg_strvec_init(&rows);
+    for (size_t k = len; st == MG_OK && k > 0; --k) {
+        mg_strvec next;
+        mg_strvec_init(&next);
+        st = mg_apply_patch(&rows, &chain[k - 1]->patch, &next);
+        if (st == MG_OK) {
+            mg_strvec_free(&rows);
+            rows = next;
+        }
+    }
+    mg_free((void *)chain);
+
+    if (st != MG_OK) { mg_strvec_free(&rows); return st; }
+    mg_strvec_free(out);
+    *out = rows;
+    return MG_OK;
+}
