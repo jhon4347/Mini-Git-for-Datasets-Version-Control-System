@@ -106,3 +106,33 @@ mg_status mg_hashmap_put(mg_hashmap *m, const char *key, void *value) {
     return MG_OK;
 }
 
+void *mg_hashmap_get(const mg_hashmap *m, const char *key) {
+    if (!m || !key) return NULL;
+    mg_hm_node *n = find_node(m, key, hash_str(key));
+    return n ? n->value : NULL;
+}
+
+int mg_hashmap_contains(const mg_hashmap *m, const char *key) {
+    if (!m || !key) return 0;
+    return find_node(m, key, hash_str(key)) != NULL;
+}
+
+mg_status mg_hashmap_remove(mg_hashmap *m, const char *key) {
+    if (!m || !key) return MG_ERR_INVALID;
+    if (m->nbuckets == 0) return MG_ERR_NOT_FOUND;
+    uint64_t h = hash_str(key);
+    mg_hm_node **link = &m->buckets[h & (m->nbuckets - 1)];
+    while (*link) {
+        mg_hm_node *n = *link;
+        if (n->hash == h && strcmp(n->key, key) == 0) {
+            *link = n->next;                                /* unlink, then free */
+            free_node(m, n);
+            m->size--;
+            return MG_OK;
+        }
+        link = &n->next;
+    }
+    return MG_ERR_NOT_FOUND;
+}
+
+size_t mg_hashmap_size(const mg_hashmap *m) { return m ? m->size : 0; }
